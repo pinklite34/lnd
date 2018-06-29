@@ -248,7 +248,7 @@ type Switch struct {
 // New creates the new instance of htlc switch.
 func New(cfg Config, currentHeight uint32) (*Switch, error) {
 	circuitMap, err := NewCircuitMap(&CircuitMapConfig{
-		DB: cfg.DB,
+		DB:                    cfg.DB,
 		ExtractErrorEncrypter: cfg.ExtractErrorEncrypter,
 	})
 	if err != nil {
@@ -934,6 +934,21 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 			addErr := errors.Errorf("unable to find link with "+
 				"destination %v", packet.outgoingChanID)
 
+			s.fwdEventMtx.Lock()
+			s.pendingFwdingEvents = append(
+				s.pendingFwdingEvents,
+				channeldb.ForwardingEvent{
+					Type:           channeldb.FailAttemptForward,
+					FailCode:       channeldb.UnknownNextPeer,
+					Timestamp:      time.Now(),
+					IncomingChanID: packet.incomingChanID,
+					OutgoingChanID: packet.outgoingChanID,
+					AmtIn:          packet.incomingAmount,
+					AmtOut:         packet.amount,
+				},
+			)
+			s.fwdEventMtx.Unlock()
+
 			return s.failAddPacket(packet, failure, addErr)
 		}
 		interfaceLinks, _ := s.getLinks(targetLink.Peer().PubKey())
@@ -1004,6 +1019,21 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 			addErr := errors.Errorf("unable to find appropriate "+
 				"channel link insufficient capacity, need "+
 				"%v", htlc.Amount)
+
+			s.fwdEventMtx.Lock()
+			s.pendingFwdingEvents = append(
+				s.pendingFwdingEvents,
+				channeldb.ForwardingEvent{
+					Type:           channeldb.FailAttemptForward,
+					FailCode:       channeldb.InsufficientFunds,
+					Timestamp:      time.Now(),
+					IncomingChanID: packet.incomingChanID,
+					OutgoingChanID: packet.outgoingChanID,
+					AmtIn:          packet.incomingAmount,
+					AmtOut:         packet.amount,
+				},
+			)
+			s.fwdEventMtx.Unlock()
 
 			return s.failAddPacket(packet, failure, addErr)
 
@@ -1091,6 +1121,7 @@ func (s *Switch) handlePacketForward(packet *htlcPacket) error {
 				s.pendingFwdingEvents = append(
 					s.pendingFwdingEvents,
 					channeldb.ForwardingEvent{
+						Type:           channeldb.SuccessForward,
 						Timestamp:      time.Now(),
 						IncomingChanID: circuit.Incoming.ChanID,
 						OutgoingChanID: circuit.Outgoing.ChanID,
