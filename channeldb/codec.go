@@ -163,6 +163,16 @@ func writeElement(w io.Writer, element interface{}) error {
 			return err
 		}
 
+	case ForwardType:
+		if err := binary.Write(w, byteOrder, e); err != nil {
+			return err
+		}
+
+	case ForwardFailCode:
+		if err := binary.Write(w, byteOrder, e); err != nil {
+			return err
+		}
+
 	default:
 		return fmt.Errorf("Unknown type in writeElement: %T", e)
 	}
@@ -338,6 +348,16 @@ func readElement(r io.Reader, element interface{}) error {
 		}
 
 	case *lnwire.FundingFlag:
+		if err := binary.Read(r, byteOrder, e); err != nil {
+			return err
+		}
+
+	case *ForwardType:
+		if err := binary.Read(r, byteOrder, e); err != nil {
+			return err
+		}
+
+	case *ForwardFailCode:
 		if err := binary.Read(r, byteOrder, e); err != nil {
 			return err
 		}

@@ -40,8 +40,12 @@ const (
 	// channel point field was added to the invoice struct.
 	invoiceWithChannelPointVersion = 2
 
+	// forwardEventWithType is the version of the database where new
+	// type field was added to the forward event struct.
+	forwardEventWithType = 3
+
 	// LastVersion denotes current version of database.
-	LastVersion = invoiceWithChannelPointVersion
+	LastVersion = forwardEventWithType
 )
 
 type version struct {
@@ -66,6 +70,10 @@ var (
 		{
 			number:    invoiceWithChannelPointVersion,
 			migration: migrateAddInvoiceWithChannelPoint,
+		},
+		{
+			number:    forwardEventWithType,
+			migration: migrateAddTypeToForwardEvent,
 		},
 	}
 
