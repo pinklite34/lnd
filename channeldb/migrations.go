@@ -188,3 +188,37 @@ func migrateAddInvoiceWithChannelPoint(tx *bolt.Tx) error {
 
 	return nil
 }
+
+// migrateAddTypeToForwardEvent migrates db to use forward event with type
+// and fail code.
+func migrateAddTypeToForwardEvent(tx *bolt.Tx) error {
+	logBucket := tx.Bucket(forwardingLogBucket)
+	if logBucket != nil {
+		return logBucket.ForEach(func(logTime, logData []byte) error {
+			var event ForwardingEvent
+			r := bytes.NewReader(logData)
+			err := decodeForwardingEvent(r, &event, forwardEventWithType-1)
+			if err != nil {
+				return err
+			}
+
+			// Set previous forwards as successful
+			event.Type = SuccessForward
+
+			// Encode with new version of database
+			var eventBuf bytes.Buffer
+			err = encodeForwardingEvent(&eventBuf, &event, forwardEventWithType)
+			if err != nil {
+				return err
+			}
+
+			err = logBucket.Put(logTime, eventBuf.Bytes())
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+	}
+
+	return nil
+}

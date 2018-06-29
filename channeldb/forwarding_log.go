@@ -33,7 +33,7 @@ const (
 	// MaxResponseEvents is the max number of forwarding events that will
 	// be returned by a single query response. This size was selected to
 	// safely remain under gRPC's 4MiB message size response limit. As each
-	// full forwarding event (including the timestamp) is 40 bytes, we can
+	// full forwarding event (including the timestamp) is 42 bytes, we can
 	// safely return 50k entries in a single response.
 	MaxResponseEvents = 50000
 )
@@ -56,35 +56,93 @@ type ForwardingLog struct {
 	db *DB
 }
 
-// ForwardingEvent is an event in the forwarding log's time series. Each
-// forwarding event logs the creation and tear-down of a payment circuit. A
-// circuit is created once an incoming HTLC has been fully forwarded, and
-// destroyed once the payment has been settled.
+// ForwardType is used to determine was the forward payment been successful or
+// failed.
+type ForwardType uint8
+
+const (
+	// SuccessForward type logs the creation and tear-down of a payment
+	// circuit. A circuit is created once an incoming HTLC has been fully
+	// forwarded, and destroyed once the payment has been settled.
+	SuccessForward ForwardType = 1
+
+	// FailAttemptForward type logs the fail attempt of switch to forward the
+	// payment. Fail might happened because of the insufficient funds or peer
+	// not being online. Such event helps external hub subsystems to track
+	// attempts and act accordingly.
+	//
+	// NOTE: This type of event shouldn't be stored persistently,
+	// because cost of overflow attack is minimal.
+	FailAttemptForward ForwardType = 2
+)
+
+// ForwardFailCode is used to determine the exact type of failure which lead
+// to forward payment to fail.
+type ForwardFailCode uint8
+
+const (
+	// UnknownNextPeer denotes type of forward fail, where switch was unable
+	// to send payment because of unknown next peer, i.e. peer is not
+	// connected, or doesn't have channel with us anymore.
+	UnknownNextPeer ForwardFailCode = 1
+
+	// InsufficientFunds denotes type of forward fail, where switch was unable
+	// to send payment because of insufficiency of funds in outgoing channel
+	// form our side.
+	InsufficientFunds ForwardFailCode = 2
+)
+
+// ForwardingEvent is an event in the forwarding log's time series.
 type ForwardingEvent struct {
-	// Timestamp is the settlement time of this payment circuit.
+	// Type is the type of the forwarding event.
+	Type ForwardType
+
+	// FailCode is the type of fail forward event, populated only of forward
+	// has failed.
+	FailCode ForwardFailCode
+
+	// Timestamp is the settlement time of this payment circuit in case of
+	// success, and time of forward failure in case of rejection.
 	Timestamp time.Time
 
-	// IncomingChanID is the incoming channel ID of the payment circuit.
+	// IncomingChanID is the ID of incoming channel, from which payment
+	// came from.
 	IncomingChanID lnwire.ShortChannelID
 
-	// OutgoingChanID is the outgoing channel ID of the payment circuit.
+	// OutgoingChanID is the ID of the outgoing channel, where payment
+	// should have been forwarded.
 	OutgoingChanID lnwire.ShortChannelID
 
 	// AmtIn is the amount of the incoming HTLC. Subtracting this from the
-	// outgoing amount gives the total fees of this payment circuit.
+	// outgoing amount gives the total fees of this payment.
 	AmtIn lnwire.MilliSatoshi
 
 	// AmtOut is the amount of the outgoing HTLC. Subtracting the incoming
-	// amount from this gives the total fees for this payment circuit.
+	// amount from this gives the total fees for this payment.
 	AmtOut lnwire.MilliSatoshi
 }
 
 // encodeForwardingEvent writes out the target forwarding event to the passed
 // io.Writer, using the expected DB format. Note that the timestamp isn't
 // serialized as this will be the key value within the bucket.
-func encodeForwardingEvent(w io.Writer, f *ForwardingEvent) error {
-	return writeElements(
-		w, f.IncomingChanID, f.OutgoingChanID, f.AmtIn, f.AmtOut,
+func encodeForwardingEvent(w io.Writer, f *ForwardingEvent,
+	version DBVersionNumber) error {
+	if version >= forwardEventWithType {
+		return writeElements(w,
+			f.Type,
+			f.FailCode,
+			f.IncomingChanID,
+			f.OutgoingChanID,
+			f.AmtIn,
+			f.AmtOut,
+		)
+	}
+
+	return writeElements(w,
+		f.IncomingChanID,
+		f.OutgoingChanID,
+		f.AmtIn,
+		f.AmtOut,
 	)
 }
 
@@ -92,9 +150,24 @@ func encodeForwardingEvent(w io.Writer, f *ForwardingEvent) error {
 // forwarding event into the target ForwardingEvent. Note that the timestamp
 // won't be decoded, as the caller is expected to set this due to the bucket
 // structure of the forwarding log.
-func decodeForwardingEvent(r io.Reader, f *ForwardingEvent) error {
-	return readElements(
-		r, &f.IncomingChanID, &f.OutgoingChanID, &f.AmtIn, &f.AmtOut,
+func decodeForwardingEvent(r io.Reader, f *ForwardingEvent,
+	version DBVersionNumber) error {
+	if version >= forwardEventWithType {
+		readElements(r,
+			&f.Type,
+			&f.FailCode,
+			&f.IncomingChanID,
+			&f.OutgoingChanID,
+			&f.AmtIn,
+			&f.AmtOut,
+		)
+	}
+
+	return readElements(r,
+		&f.IncomingChanID,
+		&f.OutgoingChanID,
+		&f.AmtIn,
+		&f.AmtOut,
 	)
 }
 
@@ -135,7 +208,7 @@ func (f *ForwardingLog) AddForwardingEvents(events []ForwardingEvent) error {
 
 			// With the key encoded, we'll then encode the event
 			// into our buffer, then write it out to disk.
-			err := encodeForwardingEvent(eventBuf, &event)
+			err := encodeForwardingEvent(eventBuf, &event, LastVersion)
 			if err != nil {
 				return err
 			}
@@ -250,7 +323,7 @@ func (f *ForwardingLog) Query(q ForwardingEventQuery) (ForwardingLogTimeSlice, e
 			readBuf := bytes.NewReader(events)
 			for readBuf.Len() != 0 {
 				var event ForwardingEvent
-				err := decodeForwardingEvent(readBuf, &event)
+				err := decodeForwardingEvent(readBuf, &event, LastVersion)
 				if err != nil {
 					return err
 				}
