@@ -932,6 +932,24 @@
       ],
       "default": "COOPERATIVE_CLOSE"
     },
+    "ForwardingEventForwardFailCode": {
+      "type": "string",
+      "enum": [
+        "UNKNOWN_NEXT_PEER",
+        "INSUFFICIENT_FUNDS"
+      ],
+      "default": "UNKNOWN_NEXT_PEER",
+      "description": " - UNKNOWN_NEXT_PEER: / UnknownNextPeer denotes type of forward fail, where switch was unable to send payment because of unknown next peer, i.e. peer is not connected, or doesn't have channel with us anymore.\n - INSUFFICIENT_FUNDS: / InsufficientFunds denotes type of forward fail, where switch was unable to send payment because of insufficiency of funds in outgoing channel form our side."
+    },
+    "ForwardingEventForwardType": {
+      "type": "string",
+      "enum": [
+        "SUCCESS",
+        "FAILT_ATTEMPT"
+      ],
+      "default": "SUCCESS",
+      "description": " - SUCCESS: / Success type logs the creation and tear-down of a payment circuit. A circuit is created once an incoming HTLC has been fully forwarded, and destroyed once the payment has been settled.\n - FAILT_ATTEMPT: / FailAttempt type logs the fail attempt of switch to forward the payment. Fail might happened because of the insufficient funds or peer not being online. Such event helps external hub subsystems to track attempts and act accordingly."
+    },
     "PendingChannelsResponseClosedChannel": {
       "type": "object",
       "properties": {
@@ -1548,6 +1566,14 @@
           "type": "string",
           "format": "uint64",
           "description": "/ The total fee that this payment circuit carried."
+        },
+        "type": {
+          "$ref": "#/definitions/ForwardingEventForwardType",
+          "description": "/ ForwardType is used to determine was the forward payment been successful or failed."
+        },
+        "fail_code": {
+          "$ref": "#/definitions/ForwardingEventForwardFailCode",
+          "description": "/ ForwardFailCode is used to determine the exact type of failure which lead to forward payment to fail."
         }
       }
     },
