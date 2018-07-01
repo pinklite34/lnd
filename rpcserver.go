@@ -4002,7 +4002,25 @@ func (r *rpcServer) ForwardingHistory(ctx context.Context,
 		amtInSat := event.AmtIn.ToSatoshis()
 		amtOutSat := event.AmtOut.ToSatoshis()
 
+		var forwardFailCode lnrpc.ForwardingEvent_ForwardFailCode
+		switch event.FailCode {
+		case channeldb.UnknownNextPeer:
+			forwardFailCode = lnrpc.ForwardingEvent_UNKNOWN_NEXT_PEER
+		case channeldb.InsufficientFunds:
+			forwardFailCode = lnrpc.ForwardingEvent_INSUFFICIENT_FUNDS
+		}
+
+		var forwardType lnrpc.ForwardingEvent_ForwardType
+		switch event.Type {
+		case channeldb.FailAttemptForward:
+			forwardType = lnrpc.ForwardingEvent_FAILT_ATTEMPT
+		case channeldb.SuccessForward:
+			forwardType = lnrpc.ForwardingEvent_SUCCESS
+		}
+
 		resp.ForwardingEvents[i] = &lnrpc.ForwardingEvent{
+			Type:      forwardType,
+			FailCode:  forwardFailCode,
 			Timestamp: uint64(event.Timestamp.Unix()),
 			ChanIdIn:  event.IncomingChanID.ToUint64(),
 			ChanIdOut: event.OutgoingChanID.ToUint64(),
