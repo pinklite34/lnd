@@ -1805,6 +1805,22 @@ message ForwardingHistoryRequest {
     uint32 num_max_events = 4 [json_name = "num_max_events"];
 }
 message ForwardingEvent {
+    enum ForwardType {
+        /// Success type logs the creation and tear-down of a payment circuit. A circuit is created once an incoming HTLC has been fully forwarded, and destroyed once the payment has been settled.
+        SUCCESS = 0;
+
+        /// FailAttempt type logs the fail attempt of switch to forward the payment. Fail might happened because of the insufficient funds or peer not being online. Such event helps external hub subsystems to track attempts and act accordingly.
+        FAILT_ATTEMPT = 1;
+    }
+
+    enum ForwardFailCode {
+        /// UnknownNextPeer denotes type of forward fail, where switch was unable to send payment because of unknown next peer, i.e. peer is not connected, or doesn't have channel with us anymore.
+        UNKNOWN_NEXT_PEER = 0;
+
+        /// InsufficientFunds denotes type of forward fail, where switch was unable to send payment because of insufficiency of funds in outgoing channel form our side.
+        INSUFFICIENT_FUNDS = 1;
+    }
+
     /// Timestamp is the time (unix epoch offset) that this circuit was completed.
     uint64 timestamp = 1 [json_name = "timestamp"];
 
@@ -1822,6 +1838,12 @@ message ForwardingEvent {
 
     /// The total fee that this payment circuit carried.
     uint64 fee = 7 [json_name = "fee"];
+
+    /// ForwardType is used to determine was the forward payment been successful or failed.
+    ForwardType type = 8 [json_name = "type"];
+
+    /// ForwardFailCode is used to determine the exact type of failure which lead to forward payment to fail.
+    ForwardFailCode fail_code = 9 [json_name = "fail_code"];
 
     // TODO(roasbeef): add settlement latency?
     //  * use FPE on the chan id?
