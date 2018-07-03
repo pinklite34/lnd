@@ -153,7 +153,7 @@ func encodeForwardingEvent(w io.Writer, f *ForwardingEvent,
 func decodeForwardingEvent(r io.Reader, f *ForwardingEvent,
 	version DBVersionNumber) error {
 	if version >= forwardEventWithType {
-		readElements(r,
+		return readElements(r,
 			&f.Type,
 			&f.FailCode,
 			&f.IncomingChanID,
